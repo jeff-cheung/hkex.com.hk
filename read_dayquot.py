@@ -114,7 +114,9 @@ current_stock_quote = []
 current_stock = -1
 
 for lines in sales_records:
-    stock_no_match = re.findall(stock_no_re_pattern, lines.strip())
+    clean_line = lines.replace("</font></pre><pre><font size='1'>", "").replace('N/A', '-').replace('TRADING SUSPENDED', '-') \
+        .strip()
+    stock_no_match = re.findall(stock_no_re_pattern, clean_line)
 
     if len(stock_no_match) > 0:
         last_stock = current_stock
@@ -162,7 +164,7 @@ stock_trading_summary_tuple = [[(*k, v) for (k, v) in s.items()] for s in stock_
 stock_trading_df = pd.DataFrame.from_records(flatten(stock_trading_summary_tuple),
     columns=['stock_no', 'price', 'trade_type', 'volume']).set_index(['stock_no', 'price'])
 
-print(stock_trading_df.loc['12'])
+print(stock_trading_df.loc['14'])
 
 print(stock_trading_df.groupby(['stock_no']).sum().sort_values(by=['volume'], ascending = False). \
         join(stock_close_and_volume_df, rsuffix='_quoted'))
