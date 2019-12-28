@@ -3,7 +3,9 @@ import itertools
 import pandas as pd
 import locale
 import os.path
+import numpy as np
 from urllib.request import urlopen, Request
+import matplotlib.pyplot as plt
 
 locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
 
@@ -41,8 +43,8 @@ with open(hkex_daily_quote_file) as f:
     sales_over_500000_marker = [i for i, x in enumerate(f) if 'SALES RECORDS OVER $500,000' in x]
 '''
 
-print(sales_records_marker[1])
-print(sales_over_500000_marker[1])
+#print(sales_records_marker[1])
+#print(sales_over_500000_marker[1])
 
 stock_quote_re_pattern = re.compile('^[\*|#]*\s*([\d]+)(.+)(HKD|CNY|USD|CAD|JPY|SGD|EUR|AUD|GBP|MOP).*\s+([\d,]+|\-)$')
 stock_close_price_pattern = re.compile('^([\d\.,|\-]+)\s+')
@@ -69,7 +71,7 @@ for lines in quotations_records:
 
     if len(stock_quote_match) > 0:
         last_stock = current_stock
-        current_stock = stock_quote_match[0][0]
+        current_stock = int(stock_quote_match[0][0])
         #print(stock_quote_match)
 
         if current_stock not in stock_close_and_volume_list:
@@ -104,8 +106,8 @@ stock_quote_re_pattern = re.compile('([CDMPUXY])*([\d,]+)\-([0-9]+\.*[0-9]+)')
 #with open(hkex_daily_quote_file) as f:
     #sales_records = f.readlines()[sales_records_marker[1]:sales_over_500000_marker[1] - 1]
 
-#sales_records = hkex_daily_quote_file[sales_records_marker[1]:sales_over_500000_marker[1] - 1]
-sales_records = hkex_daily_quote_file[sales_records_marker[1]:sales_records_marker[1] + 1000]
+sales_records = hkex_daily_quote_file[sales_records_marker[1]:sales_over_500000_marker[1] - 1]
+#sales_records = hkex_daily_quote_file[sales_records_marker[1]:sales_records_marker[1] + 1000]
 
 #print(sales_records)
 stock_list = {}
@@ -120,10 +122,10 @@ for lines in sales_records:
 
     if len(stock_no_match) > 0:
         last_stock = current_stock
-        current_stock = stock_no_match[0][0]
+        current_stock = int(stock_no_match[0][0])
         
         if current_stock not in stock_list:
-            stock_list[stock_no_match[0][0]] = stock_no_match[0][1]
+            stock_list[int(stock_no_match[0][0])] = stock_no_match[0][1]
             stock_quote[last_stock] = current_stock_quote
             current_stock_quote = []
 
@@ -162,10 +164,17 @@ flatten = itertools.chain.from_iterable
 stock_trading_summary_tuple = [[(*k, v) for (k, v) in s.items()] for s in stock_trading_summary]
 
 stock_trading_df = pd.DataFrame.from_records(flatten(stock_trading_summary_tuple),
-    columns=['stock_no', 'price', 'trade_type', 'volume']).set_index(['stock_no', 'price'])
+    columns=['stock_no', 'price', 'trade_type', 'volume'])#.set_index(['stock_no', 'price'])
 
-print(stock_trading_df.loc['14'])
+stock_trading_df_groupby = stock_trading_df.groupby(['stock_no'])[['price', 'volume']].\
+    apply(lambda x: sum(x['price'] * x['volume']) / sum(x['volume'])).reset_index().rename(columns={0: 'weighted_price'})
 
-print(stock_trading_df.groupby(['stock_no']).sum().sort_values(by=['volume'], ascending = False). \
-        join(stock_close_and_volume_df, rsuffix='_quoted'))
+stock_trading_df_join = stock_trading_df_groupby.join(stock_close_and_volume_df, on='stock_no', rsuffix='_quoted')
 
+stock_trading_df_join['price_diff'] = stock_trading_df_join['weighted_price'] / stock_trading_df_join['close'] - 1
+
+stock_trading_df_join.query('close > 1 and close < 20').plot.scatter(x='close', y='price_diff')
+
+stock_trading_df_join.query('close > 1 and close < 20').plot.hexbin(x='close', y='price_diff', gridsize=25)
+
+plt.show()
