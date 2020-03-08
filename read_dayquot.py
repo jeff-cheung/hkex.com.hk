@@ -12,18 +12,18 @@ import seaborn as sns
 
 def weighted_stat(stock_trading_df):
     if (stock_trading_df.shape[0] == 1):
-        return pd.Series([0, 0, stock_trading_df['price'][0], 1, stock_trading_df['price'][0],
-                            stock_trading_df['price'][0]],
-            index=['price_var', 'price_std', 'price_mean', 'no_of_txn', 'price_min', 'price_max'])
+        return pd.Series([0, 0, stock_trading_df['price'][0], stock_trading_df['price'][0],
+                            stock_trading_df['price'][0], 1, stock_trading_df['turnover'][0]], 
+            index=['price_var', 'price_std', 'price_mean', 'price_min', 'price_max', 'no_of_txn', 'turnover'])
     else:
         return pd.Series(
             [DescrStatsW(stock_trading_df['price'], stock_trading_df['volume']).var,
             DescrStatsW(stock_trading_df['price'], stock_trading_df['volume']).std,
             DescrStatsW(stock_trading_df['price'], stock_trading_df['volume']).mean,
-            DescrStatsW(stock_trading_df['price']).nobs, min(stock_trading_df['price']),
-            max(stock_trading_df['price'])
+            min(stock_trading_df['price']), max(stock_trading_df['price']),
+            DescrStatsW(stock_trading_df['price']).nobs, sum(stock_trading_df['turnover'])
             ],
-            index=['price_var', 'price_std', 'price_mean', 'no_of_txn', 'price_min', 'price_max'])
+            index=['price_var', 'price_std', 'price_mean', 'price_min', 'price_max', 'no_of_txn', 'turnover'])
 
 locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
 
@@ -194,6 +194,7 @@ def retrieve_stock_trading_df():
     stock_trading_df = pd.DataFrame.from_records(flatten(stock_trading_summary_tuple),
         columns=['stock_no', 'price', 'trade_type', 'volume'])#.set_index(['stock_no', 'price'])
 
+    stock_trading_df['turnover'] = stock_trading_df['price'] * stock_trading_df['volume']
     #print(stock_trading_df)
 
     return stock_trading_df
@@ -216,12 +217,12 @@ else:
     stock_trading_df = retrieve_stock_trading_df()
     stock_trading_df.to_csv('stock_trading_df_{}.csv'.format(hkex_daily_quote_date), index=False)
 
-stock_trading_df_groupby = stock_trading_df.groupby(['stock_no'])[['price', 'volume']].\
+stock_trading_df_groupby = stock_trading_df.groupby(['stock_no'])[['price', 'volume', 'turnover']].\
     apply(weighted_stat).\
     reset_index()
 
-#print(stock_trading_df_groupby.head(10))
-#print(stock_close_and_volume_df.head(10))
+print(stock_trading_df.head(10).to_string())
+print(stock_trading_df_groupby.head(10).to_string())
 
 #stock_trading_df_join = stock_trading_df_groupby.join(stock_close_and_volume_df, on='stock_no', how='inner', rsuffix='_quoted')
 
@@ -249,11 +250,11 @@ stock_trading_df_join['price_diff'] = price_diff_vec(stock_trading_df_join['clos
 
 #plt.scatter('price_diff', 'price_std', 'no_of_txn', data = stock_trading_df_join)
 
-fig, axes = plt.subplots(nrows=2, ncols=1, constrained_layout=True)
-
-s = stock_trading_df_join.nlargest(2, 'price_std').itertuples()
+s = stock_trading_df_join.nlargest(2, 'turnover').itertuples()
 #s = stock_trading_df_join.nsmallest(10, 'volume').itertuples()
 
+'''
+#fig, axes = plt.subplots(nrows=2, ncols=1, constrained_layout=True)
 #for _, s in enumerate(stock_trading_df_join.nlargest(10, 'price_std').itertuples()):
 #for ax, s in zip(axes, stock_trading_df_join.nlargest(10, 'price_std').itertuples()):
 for ax in axes.flat:
@@ -269,20 +270,35 @@ for ax in axes.flat:
     ax.bar(stock_trading_df.loc[stock_trading_df['stock_no'] == ss.stock_no, 'price'],
                 stock_trading_df.loc[stock_trading_df['stock_no'] == ss.stock_no, 'volume'], 0.1)
     ax.bar(x = 'price', height = 'volume',
-                data = stock_trading_df.loc[stock_trading_df['stock_no'] == ss.stock_no], width = 0.001)            
+                data = stock_trading_df.loc[stock_trading_df['stock_no'] == ss.stock_no], width = 0.001)
+    
+    ax.hist(x='price', weights='turnover', data = stock_trading_df.loc[stock_trading_df['stock_no'] == ss.stock_no],
+            cumulative=True, histtype='step', density=True)
     ax.set(title = ss.stock_no, xlabel = 'Price', ylabel = 'Volume')
     ax.axvline(ss.close, ls = '--', color = 'red')
     ax.grid(True)
 
 plt.show()
+'''
+fig, ax = plt.subplots()
 
+for _, s in enumerate(stock_trading_df_join.nlargest(5, 'turnover').itertuples()):
+    #plt.hist(x='price', weights='turnover', data = stock_trading_df.loc[stock_trading_df['stock_no'] == s.stock_no],
+    #        cumulative=True, histtype='step', density=True, stacked=True)
+    ax.hist(x=stats.probplot(stock_trading_df.loc[stock_trading_df['stock_no'] == s.stock_no, 'price'], fit=False)[0],
+                weights=stock_trading_df.loc[stock_trading_df['stock_no'] == s.stock_no, 'turnover'],
+                cumulative=True, histtype='step', density=True, stacked=True)
+    ax.set_label(s.stock_no)
+
+plt.show()
+
+'''
 plot_graph_data = stock_trading_df[stock_trading_df.isin(stock_trading_df_join.nlargest(2, 'price_std')['stock_no'].\
                     to_frame().to_dict('list')).any(1)]
 print(plot_graph_data)
 
 sns.set_context("paper")
 
-'''
 def qqplot(x, y, **kwargs):
     _, xr = stats.probplot(x, fit=False)
     _, yr = stats.probplot(np.log(y), fit=False)
@@ -294,8 +310,3 @@ g.add_legend()
 plt.show()
 '''
 
-for s in plot_graph_data['stock_no'].unique():
-#    sns.jointplot("price", "volume", data=plot_graph_data[plot_graph_data['stock_no'] == s])
-    sns.barplot("price", "volume", data=plot_graph_data[plot_graph_data['stock_no'] == s])
-
-plt.show()
